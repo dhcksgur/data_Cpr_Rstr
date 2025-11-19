@@ -19,16 +19,16 @@ python resample_waveforms.py 채널3.csv 채널3_128hz.csv --sample-rate 128
 
 ## 3채널 주기 압축
 
-`compress_waveforms.py` 스크립트는 128샘플짜리 주기를 기준으로 3채널 데이터를
-압축합니다. 파형의 형태가 변하지 않고 크기만 변하는 정상 구간은 대표파형과
-주기별 배율만 저장되고, 채널2(`--event-channel`)에서 이상이 감지된 구간은
-앞·뒤 각각 3주기(`--boundary-cycles`)를 원본 그대로 보존합니다. 구간 내부는
-변동이 작으면 정상 구간과 동일하게 배율로 저장되고, 큰 변동이 지속되면 전체
-주기를 그대로 기록합니다.
+`compress_waveforms.py` 스크립트는 128샘플짜리 주기를 기준으로 3개의 CSV 입력을
+동시에 읽어 압축합니다. 파형의 형태가 변하지 않고 크기만 변하는 정상 구간은
+대표파형과 주기별 배율만 저장되고, 세 채널 중 하나라도 `--event-threshold`를
+넘는 순간 이상 구간으로 분류되어 앞·뒤 각각 3주기(`--boundary-cycles`)를 원본
+그대로 보존합니다. 구간 내부는 변동이 작으면 정상 구간과 동일하게 배율로
+저장되고, 큰 변동이 지속되면 전체 주기를 그대로 기록합니다.
 
 ```bash
-python compress_waveforms.py waveforms.csv compressed.json \
-    --channels ch1 ch2 ch3 --event-channel ch2 \
+python compress_waveforms.py ch1_128hz.csv ch2_128hz.csv ch3_128hz.csv \
+    compressed.json --channels ch1 ch2 ch3 --value-columns value value value \
     --samples-per-cycle 128 --sample-rate 128
 ```
 

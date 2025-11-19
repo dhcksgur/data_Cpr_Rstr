@@ -3,10 +3,10 @@
 This script groups resampled oscilloscope traces into 128-sample cycles and
 stores them in a compact representation.  Cycles that closely follow a
 representative waveform (normal operating conditions) are described through a
-single scale factor per channel.  Abnormal regions – detected primarily through
-channel 2 – retain up to ``boundary_cycles`` raw cycles at the beginning and the
-end, while the interior of the event is compressed whenever its shape remains
-stable.
+single scale factor per channel.  Abnormal regions – detected independently on
+each channel – retain up to ``boundary_cycles`` raw cycles at the beginning and
+the end, while the interior of the event is compressed whenever its shape
+remains stable.
 
 The resulting file is a JSON document with three sections:
 
@@ -43,10 +43,10 @@ EPS = 1e-12
 
 @dataclass
 class CompressionConfig:
-    input_path: Path
+    input_paths: Sequence[Path]
     output_path: Path
     channels: Sequence[str]
-    event_channel: str
+    value_columns: Sequence[str]
     samples_per_cycle: int = 128
     sample_rate: float = 128.0
     time_column: str | None = "time"
@@ -58,19 +58,27 @@ class CompressionConfig:
 
 def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="CSV file containing 3 channels")
+    parser.add_argument(
+        "inputs",
+        type=Path,
+        nargs=3,
+        metavar=("CH1_CSV", "CH2_CSV", "CH3_CSV"),
+        help="Resampled CSV files for each channel",
+    )
     parser.add_argument("output", type=Path, help="Path to the JSON archive")
     parser.add_argument(
         "--channels",
         nargs=3,
         metavar=("CH1", "CH2", "CH3"),
         default=["ch1", "ch2", "ch3"],
-        help="Names of the three value columns inside the CSV file",
+        help="Logical names assigned to the three channels in the archive",
     )
     parser.add_argument(
-        "--event-channel",
-        default="ch2",
-        help="Channel used to delimit abnormal segments",
+        "--value-columns",
+        nargs=3,
+        metavar=("VAL1", "VAL2", "VAL3"),
+        default=["value", "value", "value"],
+        help="Name of the value column inside each CSV file",
     )
     parser.add_argument(
         "--samples-per-cycle",
@@ -116,10 +124,10 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
 
     ns = parser.parse_args(args)
     return CompressionConfig(
-        input_path=ns.input,
+        input_paths=ns.inputs,
         output_path=ns.output,
         channels=ns.channels,
-        event_channel=ns.event_channel,
+        value_columns=ns.value_columns,
         samples_per_cycle=ns.samples_per_cycle,
         sample_rate=ns.sample_rate,
         time_column=ns.time_column,
@@ -130,11 +138,49 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
     )
 
 
-def _load_channels(df: pd.DataFrame, channel_names: Sequence[str]) -> np.ndarray:
-    missing = [name for name in channel_names if name not in df]
-    if missing:
-        raise KeyError(f"Missing channels in CSV: {missing}")
-    return df[channel_names].to_numpy(dtype=float)
+def _load_channels(
+    input_paths: Sequence[Path],
+    value_columns: Sequence[str],
+    time_column: str | None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    if len(input_paths) != 3:
+        raise ValueError("Exactly three CSV files must be provided.")
+
+    if len(value_columns) != 3:
+        raise ValueError("Three value column names are required.")
+
+    value_arrays: list[np.ndarray] = []
+    times: np.ndarray | None = None
+    expected_len: int | None = None
+
+    for idx, (path, value_col) in enumerate(zip(input_paths, value_columns)):
+        df = pd.read_csv(path)
+        if value_col not in df:
+            raise KeyError(f"Column '{value_col}' missing from {path}")
+
+        values = df[value_col].to_numpy(dtype=float)
+        if expected_len is None:
+            expected_len = len(values)
+        elif len(values) != expected_len:
+            raise ValueError("All input CSV files must contain the same number of rows.")
+        value_arrays.append(values)
+
+        if time_column and time_column in df:
+            candidate = df[time_column].to_numpy(dtype=float)
+            if times is None:
+                times = candidate
+            else:
+                if len(candidate) != len(times):
+                    raise ValueError(
+                        "Time column lengths differ across CSV files."
+                    )
+                if not np.allclose(candidate, times):
+                    raise ValueError("Time columns do not match across CSV files.")
+        elif time_column:
+            raise KeyError(f"Time column '{time_column}' missing from {path}")
+
+    stacked = np.stack(value_arrays, axis=1)  # (samples, channels)
+    return stacked, times
 
 
 def _reshape_cycles(values: np.ndarray, samples_per_cycle: int) -> np.ndarray:
@@ -223,14 +269,17 @@ def _raw_entry(
 
 
 def compress_waveforms(config: CompressionConfig) -> dict:
-    df = pd.read_csv(config.input_path)
-    values = _load_channels(df, config.channels)
+    if len(config.channels) != 3:
+        raise ValueError("Exactly three channel names must be provided.")
+
+    values, times = _load_channels(
+        config.input_paths, config.value_columns, config.time_column
+    )
     waveforms = _reshape_cycles(values, config.samples_per_cycle)
     templates = _compute_templates(waveforms)
     gains, errors = _cycle_gains_and_errors(waveforms, templates)
 
-    event_idx = config.channels.index(config.event_channel)
-    event_mask = errors[:, event_idx] >= config.event_threshold
+    event_mask = (errors >= config.event_threshold).any(axis=1)
     segments = _find_segments(event_mask)
 
     cycles: list[dict] = []
@@ -274,10 +323,8 @@ def compress_waveforms(config: CompressionConfig) -> dict:
             cycles.append(_raw_entry("raw", pointer, config.channels, waveforms, errors))
         pointer += 1
 
-    time_col = config.time_column
-    if time_col and time_col in df:
-        times = df[time_col].to_numpy(dtype=float)
-        time_start = float(times[0]) if len(times) else 0.0
+    if times is not None and len(times):
+        time_start = float(times[0])
         if len(times) > 1:
             dt = float(np.median(np.diff(times)))
         else:
@@ -289,7 +336,7 @@ def compress_waveforms(config: CompressionConfig) -> dict:
     payload = {
         "metadata": {
             "channels": list(config.channels),
-            "event_channel": config.event_channel,
+            "value_columns": list(config.value_columns),
             "samples_per_cycle": config.samples_per_cycle,
             "sample_rate": config.sample_rate,
             "normal_threshold": config.normal_threshold,
