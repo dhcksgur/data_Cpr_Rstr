@@ -1,7 +1,9 @@
 """Waveform resampling utility.
 
 This module converts the raw oscilloscope CSV exports into evenly spaced
-samples that match the desired sampling frequency (128 Hz by default).
+samples that match the desired sampling frequency.  The default behavior aligns
+with the requirement of capturing 128 samples for every 60 Hz AC cycle,
+resulting in ``60 * 128 = 7,680`` samples per second.
 
 The oscilloscope exports contain the time stamps in column ``D`` and the
 measured values in column ``E``.  Since those files are fairly large (because of
@@ -10,10 +12,13 @@ exactly ``sample_rate`` samples are stored per second.  The script performs a
 linear interpolation so that no information about the shape of the signal is
 lost in the process.
 
-Example usage::
+Example usage (defaulting to 60 Hz × 128 samples):
 
-    python resample_waveforms.py raw_voltage.csv voltage_128hz.csv \
-        --sample-rate 128
+    python resample_waveforms.py raw_voltage.csv voltage_128_per_cycle.csv
+
+If you need to target a different mains frequency or samples-per-cycle count,
+use ``--line-frequency`` and ``--samples-per-cycle``.  To bypass this helper and
+work directly with the per-second sampling rate pass ``--sample-rate``.
 
 The script accepts Excel-style column letters (``D``/``E``) as well as column
 names when selecting the time and value columns.
@@ -98,9 +103,23 @@ def resolve_column(df: pd.DataFrame, selector: str) -> pd.Series:
 class ResampleConfig:
     input_path: Path
     output_path: Path
-    sample_rate: float = 128.0
+    sample_rate: float | None = None
+    line_frequency: float = 60.0
+    samples_per_cycle: int = 128
     time_column: str = "D"
     value_column: str = "E"
+
+    @property
+    def resolved_sample_rate(self) -> float:
+        """Return the effective per-second sampling rate.
+
+        The user may specify ``--sample-rate`` directly or let the script derive
+        it from ``line_frequency`` × ``samples_per_cycle``.
+        """
+
+        if self.sample_rate is not None:
+            return self.sample_rate
+        return self.line_frequency * self.samples_per_cycle
 
 
 def parse_args(args: Iterable[str] | None = None) -> ResampleConfig:
@@ -132,8 +151,23 @@ def parse_args(args: Iterable[str] | None = None) -> ResampleConfig:
     parser.add_argument(
         "--sample-rate",
         type=float,
-        default=128.0,
-        help="Target sampling rate in Hz (default: 128)",
+        default=None,
+        help=(
+            "Target sampling rate in Hz. If omitted, the value is derived from "
+            "--line-frequency × --samples-per-cycle (default 60 Hz × 128)."
+        ),
+    )
+    parser.add_argument(
+        "--line-frequency",
+        type=float,
+        default=60.0,
+        help="Fundamental waveform frequency in Hz (default: 60)",
+    )
+    parser.add_argument(
+        "--samples-per-cycle",
+        type=int,
+        default=128,
+        help="Number of samples captured for each cycle (default: 128)",
     )
     parser.add_argument(
         "--time-column",
@@ -155,13 +189,21 @@ def parse_args(args: Iterable[str] | None = None) -> ResampleConfig:
         input_path=input_path,
         output_path=output_path,
         sample_rate=ns.sample_rate,
+        line_frequency=ns.line_frequency,
+        samples_per_cycle=ns.samples_per_cycle,
         time_column=ns.time_column,
         value_column=ns.value_column,
     )
 
 
 def resample_waveform(config: ResampleConfig) -> None:
-    if config.sample_rate <= 0:
+    if config.samples_per_cycle <= 0:
+        raise ValueError("Samples per cycle must be a positive integer.")
+    if config.line_frequency <= 0:
+        raise ValueError("Line frequency must be a positive number.")
+
+    sample_rate = config.resolved_sample_rate
+    if sample_rate <= 0:
         raise ValueError("Sample rate must be a positive number.")
 
     df = pd.read_csv(config.input_path, low_memory=False)
@@ -191,8 +233,8 @@ def resample_waveform(config: ResampleConfig) -> None:
     if end <= start:
         raise ValueError("Time column must contain increasing values.")
 
-    num_samples = int(np.floor((end - start) * config.sample_rate)) + 1
-    uniform_times = np.linspace(start, start + (num_samples - 1) / config.sample_rate, num_samples)
+    num_samples = int(np.floor((end - start) * sample_rate)) + 1
+    uniform_times = np.linspace(start, start + (num_samples - 1) / sample_rate, num_samples)
 
     resampled_values = np.interp(uniform_times, times, values)
 
