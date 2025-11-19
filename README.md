@@ -16,3 +16,34 @@ python resample_waveforms.py 채널3.csv 채널3_128hz.csv --sample-rate 128
 
 출력 파일에는 `time`과 `value` 두 열만 포함되며, 각각 균일한 시간축과 그에
 해당하는 계측값을 나타냅니다.
+
+## 3채널 주기 압축
+
+`compress_waveforms.py` 스크립트는 128샘플짜리 주기를 기준으로 3채널 데이터를
+압축합니다. 파형의 형태가 변하지 않고 크기만 변하는 정상 구간은 대표파형과
+주기별 배율만 저장되고, 채널2(`--event-channel`)에서 이상이 감지된 구간은
+앞·뒤 각각 3주기(`--boundary-cycles`)를 원본 그대로 보존합니다. 구간 내부는
+변동이 작으면 정상 구간과 동일하게 배율로 저장되고, 큰 변동이 지속되면 전체
+주기를 그대로 기록합니다.
+
+```bash
+python compress_waveforms.py waveforms.csv compressed.json \
+    --channels ch1 ch2 ch3 --event-channel ch2 \
+    --samples-per-cycle 128 --sample-rate 128
+```
+
+JSON 결과에는 메타데이터, 대표파형, 그리고 각 주기별로 어떤 방식으로 저장되었는지
+정보가 담깁니다. `--normal-threshold`, `--event-threshold`, `--raw-threshold` 값을
+조절하면 정상/이상 판단 기준을 쉽게 바꿀 수 있습니다.
+
+## 압축 데이터 복원
+
+`decompress_waveforms.py`는 위에서 생성한 JSON을 다시 128샘플 해상도의 CSV로
+복원합니다. 대표파형과 배율 정보를 사용하여 정상 구간을 재구성하고, 압축 과정에서
+원본을 그대로 보관했던 구간은 그대로 이어 붙입니다.
+
+```bash
+python decompress_waveforms.py compressed.json restored.csv
+```
+
+필요하다면 `--time-column` 옵션으로 시간 열 이름을 바꿀 수 있습니다.
