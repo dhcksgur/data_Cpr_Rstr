@@ -51,13 +51,16 @@ python decompress_waveforms.py compressed.json restored.csv
 ## GUI 실행 및 EXE 패키징
 
 `waveform_tool_gui.py`는 위의 세 스크립트를 하나의 그래픽 도구로 묶어 제공합니다.
-세 개의 탭이 있으며 원본 CSV 업로드 → 재샘플링 → 압축 → 복원이 모두 가능합니다.
+세 개의 탭(재샘플링, 압축, 복원/미리보기)이 있으며 원본 CSV 업로드 → 재샘플링 → 압축 →
+복원이 모두 가능합니다. Tkinter 기반이므로 추가 GUI 라이선스 팝업 없이 사용할 수
+있습니다.
 
 ```bash
 python waveform_tool_gui.py
 ```
 
-독립 실행형 EXE가 필요하다면 PyInstaller를 사용하세요.
+독립 실행형 EXE가 필요하다면 PyInstaller를 사용하세요. Tkinter는 기본 포함이므로
+별도의 GUI 라이브러리 배포 없이 단일 실행 파일을 만들 수 있습니다.
 
 ```bash
 pip install -r requirements.txt

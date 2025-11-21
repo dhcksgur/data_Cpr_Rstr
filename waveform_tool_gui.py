@@ -1,7 +1,7 @@
 """Graphical interface for waveform resampling, compression, and restoration.
 
 This tool wraps the existing command-line utilities and exposes them in a
-single window with three tabs:
+single window with three tabs built on Tkinter (no third‑party GUI license):
 
 1. **오실로스코프 파형 샘플링 추출** — resamples raw CSV data to a uniform
    sampling rate based on the requested base frequency and samples per cycle.
@@ -23,7 +23,8 @@ from typing import Iterable
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import PySimpleGUI as sg
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from compress_waveforms import CompressionConfig, compress_waveforms
@@ -48,18 +49,16 @@ class SampleSettings:
 
 
 # ---------- Matplotlib helpers ----------
-def _clear_canvas(canvas):
-    if canvas.TKCanvas is None:
-        return
-    for child in canvas.TKCanvas.winfo_children():
+def _clear_canvas(canvas_frame: tk.Frame) -> None:
+    for child in canvas_frame.winfo_children():
         child.destroy()
 
 
-def _draw_figure_on_canvas(canvas, figure):
-    _clear_canvas(canvas)
-    fig_canvas = FigureCanvasTkAgg(figure, master=canvas.TKCanvas)
+def _draw_figure_on_canvas(canvas_frame: tk.Frame, figure):
+    _clear_canvas(canvas_frame)
+    fig_canvas = FigureCanvasTkAgg(figure, master=canvas_frame)
     fig_canvas.draw()
-    fig_canvas.get_tk_widget().pack(side="top", fill="both", expand=1)
+    fig_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     return fig_canvas
 
 
@@ -67,8 +66,8 @@ def _draw_figure_on_canvas(canvas, figure):
 def handle_resample(values: dict) -> None:
     try:
         settings = SampleSettings(
-            frequency_hz=float(values["resample_freq"]),
-            samples_per_cycle=int(values["resample_samples"]),
+            frequency_hz=float(values.get("resample_freq", 0)),
+            samples_per_cycle=int(values.get("resample_samples", 0)),
         )
         config = ResampleConfig(
             input_path=Path(values["resample_input"]),
@@ -78,16 +77,16 @@ def handle_resample(values: dict) -> None:
             value_column=values["resample_value_col"],
         )
         resample_waveform(config)
-        sg.popup("재샘플링이 완료되었습니다.")
+        messagebox.showinfo("완료", "재샘플링이 완료되었습니다.")
     except Exception as exc:  # noqa: BLE001
-        sg.popup_error(f"재샘플링 중 오류 발생: {exc}")
+        messagebox.showerror("오류", f"재샘플링 중 오류 발생: {exc}")
 
 
 def handle_compress(values: dict) -> None:
     try:
         settings = SampleSettings(
-            frequency_hz=float(values["compress_freq"]),
-            samples_per_cycle=int(values["compress_samples"]),
+            frequency_hz=float(values.get("compress_freq", 0)),
+            samples_per_cycle=int(values.get("compress_samples", 0)),
         )
         config = CompressionConfig(
             input_paths=[
@@ -96,20 +95,28 @@ def handle_compress(values: dict) -> None:
                 Path(values["compress_ch3"]),
             ],
             output_path=Path(values["compress_output"]),
-            channels=[values["channel1_name"], values["channel2_name"], values["channel3_name"]],
-            value_columns=[values["channel1_col"], values["channel2_col"], values["channel3_col"]],
+            channels=[
+                values["channel1_name"],
+                values["channel2_name"],
+                values["channel3_name"],
+            ],
+            value_columns=[
+                values["channel1_col"],
+                values["channel2_col"],
+                values["channel3_col"],
+            ],
             samples_per_cycle=settings.samples_per_cycle,
             sample_rate=settings.sample_rate,
-            normal_threshold=float(values["normal_thresh"]),
-            event_threshold=float(values["event_thresh"]),
-            raw_threshold=float(values["raw_thresh"]),
-            boundary_cycles=int(values["boundary_cycles"]),
+            normal_threshold=float(values.get("normal_thresh", 0)),
+            event_threshold=float(values.get("event_thresh", 0)),
+            raw_threshold=float(values.get("raw_thresh", 0)),
+            boundary_cycles=int(values.get("boundary_cycles", 0)),
         )
         payload = compress_waveforms(config)
         config.output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        sg.popup("압축이 완료되었습니다.")
+        messagebox.showinfo("완료", "압축이 완료되었습니다.")
     except Exception as exc:  # noqa: BLE001
-        sg.popup_error(f"압축 중 오류 발생: {exc}")
+        messagebox.showerror("오류", f"압축 중 오류 발생: {exc}")
 
 
 def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
@@ -170,11 +177,11 @@ def load_archive_for_preview(path: Path):
         channels = list(metadata.get("channels", templates.keys()))
         return channels, templates, cycles
     except Exception as exc:  # noqa: BLE001
-        sg.popup_error(f"압축 파일을 읽는 중 오류가 발생했습니다: {exc}")
+        messagebox.showerror("오류", f"압축 파일을 읽는 중 오류가 발생했습니다: {exc}")
         return None
 
 
-def handle_decompress(values: dict, template_canvas, abnormal_canvas, figures: dict) -> None:
+def handle_decompress(values: dict, template_canvas: tk.Frame, abnormal_canvas: tk.Frame, figures: dict) -> None:
     archive_path = Path(values["decompress_input"])
     preview = load_archive_for_preview(archive_path)
     if preview is None:
@@ -190,7 +197,7 @@ def handle_decompress(values: dict, template_canvas, abnormal_canvas, figures: d
         df = decompress_waveforms(config)
         df.to_csv(config.output_path, index=False)
     except Exception as exc:  # noqa: BLE001
-        sg.popup_error(f"복원 중 오류 발생: {exc}")
+        messagebox.showerror("오류", f"복원 중 오류 발생: {exc}")
         return
 
     figures["templates"] = _draw_figure_on_canvas(
@@ -199,96 +206,173 @@ def handle_decompress(values: dict, template_canvas, abnormal_canvas, figures: d
     figures["abnormal"] = _draw_figure_on_canvas(
         abnormal_canvas, _plot_abnormal_segments(channels, templates, cycles)
     )
-    sg.popup("복원이 완료되었습니다.")
+    messagebox.showinfo("완료", "복원이 완료되었습니다.")
 
 
-# ---------- GUI layouts ----------
-def create_resample_tab() -> list[list[sg.Element]]:
-    return [
-        [sg.Text("원본 CSV 파일"), sg.Input(key="resample_input"), sg.FileBrowse()],
-        [sg.Text("출력 CSV 파일"), sg.Input(key="resample_output"), sg.FileSaveAs(file_types=(("CSV", "*.csv"),))],
-        [sg.Text("기본 주파수(Hz)"), sg.Input("60", key="resample_freq", size=(10, 1)),
-         sg.Text("주기당 샘플 수"), sg.Input("128", key="resample_samples", size=(10, 1))],
-        [sg.Text("시간 컬럼"), sg.Input("D", key="resample_time_col", size=(10, 1)),
-         sg.Text("값 컬럼"), sg.Input("E", key="resample_value_col", size=(10, 1))],
-        [sg.Button("재샘플링 실행", key="run_resample", expand_x=True)],
-    ]
+class WaveformApp:
+    """Tkinter GUI wrapper for waveform utilities."""
 
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Waveform Toolkit")
+        self.values: dict[str, str] = {}
+        self.figures: dict[str, FigureCanvasTkAgg] = {}
+        self.entries: dict[str, ttk.Entry] = {}
 
-def create_compress_tab() -> list[list[sg.Element]]:
-    return [
-        [sg.Text("채널 1 CSV"), sg.Input(key="compress_ch1"), sg.FileBrowse()],
-        [sg.Text("채널 2 CSV"), sg.Input(key="compress_ch2"), sg.FileBrowse()],
-        [sg.Text("채널 3 CSV"), sg.Input(key="compress_ch3"), sg.FileBrowse()],
-        [sg.Text("출력 JSON"), sg.Input(key="compress_output"), sg.FileSaveAs(file_types=(("JSON", "*.json"),))],
-        [sg.Text("기본 주파수(Hz)"), sg.Input("60", key="compress_freq", size=(10, 1)),
-         sg.Text("주기당 샘플 수"), sg.Input("128", key="compress_samples", size=(10, 1)),
-         sg.Text("경계 주기"), sg.Input("3", key="boundary_cycles", size=(5, 1))],
-        [sg.Text("채널 이름"),
-         sg.Input("ch1", key="channel1_name", size=(8, 1)),
-         sg.Input("ch2", key="channel2_name", size=(8, 1)),
-         sg.Input("ch3", key="channel3_name", size=(8, 1))],
-        [sg.Text("값 컬럼"),
-         sg.Input("value", key="channel1_col", size=(8, 1)),
-         sg.Input("value", key="channel2_col", size=(8, 1)),
-         sg.Input("value", key="channel3_col", size=(8, 1))],
-        [sg.Text("정상 NRMSE"), sg.Input("0.05", key="normal_thresh", size=(8, 1)),
-         sg.Text("이상 NRMSE"), sg.Input("0.08", key="event_thresh", size=(8, 1)),
-         sg.Text("RAW 임계"), sg.Input("0.15", key="raw_thresh", size=(8, 1))],
-        [sg.Button("압축 실행", key="run_compress", expand_x=True)],
-    ]
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill=tk.BOTH, expand=True)
 
+        notebook.add(self._build_resample_tab(notebook), text="오실로스코프 파형 샘플링 추출")
+        notebook.add(self._build_compress_tab(notebook), text="CSV 데이터 압축")
+        notebook.add(self._build_decompress_tab(notebook), text="압축 데이터 CSV 복원")
 
-def create_decompress_tab() -> list[list[sg.Element]]:
-    return [
-        [sg.Text("압축 JSON"), sg.Input(key="decompress_input"), sg.FileBrowse(file_types=(("JSON", "*.json"),))],
-        [sg.Text("출력 CSV"), sg.Input(key="decompress_output"), sg.FileSaveAs(file_types=(("CSV", "*.csv"),))],
-        [sg.Text("시간 컬럼 이름"), sg.Input("time", key="time_column", size=(12, 1))],
-        [sg.Button("복원 및 미리보기", key="run_decompress", expand_x=True)],
-        [sg.Text("대표파형 미리보기")],
-        [sg.Canvas(key="template_canvas", size=(640, 320))],
-        [sg.Text("이상 구간 미리보기")],
-        [sg.Canvas(key="abnormal_canvas", size=(640, 320))],
-    ]
+    # ---------- helpers ----------
+    def _add_labeled_entry(self, parent: ttk.Frame, row: int, label: str, key: str, default: str = "", width: int = 12) -> ttk.Entry:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+        entry = ttk.Entry(parent, width=width)
+        entry.insert(0, default)
+        entry.grid(row=row, column=1, sticky="ew", padx=4, pady=2)
+        self.values[key] = default
+        entry.bind("<FocusOut>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
+        entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
+        return entry
 
+    def _update_value(self, key: str, value: str) -> None:
+        self.values[key] = value
 
-def build_window() -> sg.Window:
-    sg.theme("LightBlue3")
-    layout = [
-        [
-            sg.TabGroup(
-                [
-                    [
-                        sg.Tab("오실로스코프 파형 샘플링 추출", create_resample_tab()),
-                        sg.Tab("CSV 데이터 압축", create_compress_tab()),
-                        sg.Tab("압축 데이터 CSV 복원", create_decompress_tab()),
-                    ]
-                ],
-                expand_x=True,
-                expand_y=True,
-            )
-        ]
-    ]
-    return sg.Window("Waveform Toolkit", layout, finalize=True, resizable=True)
+    def _browse_file(self, key: str, filetypes=None) -> None:
+        path = filedialog.askopenfilename(filetypes=filetypes)
+        if path:
+            self.values[key] = path
+            self.entries[key].delete(0, tk.END)
+            self.entries[key].insert(0, path)
+
+    def _save_file(self, key: str, defaultextension: str, filetypes=None) -> None:
+        path = filedialog.asksaveasfilename(defaultextension=defaultextension, filetypes=filetypes)
+        if path:
+            self.values[key] = path
+            self.entries[key].delete(0, tk.END)
+            self.entries[key].insert(0, path)
+
+    # ---------- tab builders ----------
+    def _build_resample_tab(self, notebook: ttk.Notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook)
+        frame.columnconfigure(1, weight=1)
+
+        self.entries["resample_input"] = self._add_labeled_entry(frame, 0, "원본 CSV 파일", "resample_input", width=40)
+        ttk.Button(frame, text="찾기", command=lambda: self._browse_file("resample_input", [("CSV", "*.csv"), ("모든 파일", "*.*")])).grid(row=0, column=2, padx=4, pady=2)
+
+        self.entries["resample_output"] = self._add_labeled_entry(frame, 1, "출력 CSV 파일", "resample_output", width=40)
+        ttk.Button(frame, text="저장 위치", command=lambda: self._save_file("resample_output", ".csv", [("CSV", "*.csv")])).grid(row=1, column=2, padx=4, pady=2)
+
+        self.entries["resample_freq"] = self._add_labeled_entry(frame, 2, "기본 주파수(Hz)", "resample_freq", default="60")
+        self.entries["resample_samples"] = self._add_labeled_entry(frame, 3, "주기당 샘플 수", "resample_samples", default="128")
+        self.entries["resample_time_col"] = self._add_labeled_entry(frame, 4, "시간 컬럼", "resample_time_col", default="D")
+        self.entries["resample_value_col"] = self._add_labeled_entry(frame, 5, "값 컬럼", "resample_value_col", default="E")
+
+        ttk.Button(frame, text="재샘플링 실행", command=lambda: handle_resample(self.values)).grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        return frame
+
+    def _build_compress_tab(self, notebook: ttk.Notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook)
+        frame.columnconfigure(1, weight=1)
+
+        for idx in range(1, 4):
+            key = f"compress_ch{idx}"
+            self.entries[key] = self._add_labeled_entry(frame, idx - 1, f"채널 {idx} CSV", key, width=40)
+            ttk.Button(frame, text="찾기", command=lambda k=key: self._browse_file(k, [("CSV", "*.csv"), ("모든 파일", "*.*")])).grid(row=idx - 1, column=2, padx=4, pady=2)
+
+        self.entries["compress_output"] = self._add_labeled_entry(frame, 3, "출력 JSON", "compress_output", width=40)
+        ttk.Button(frame, text="저장 위치", command=lambda: self._save_file("compress_output", ".json", [("JSON", "*.json"), ("모든 파일", "*.*")])).grid(row=3, column=2, padx=4, pady=2)
+
+        self.entries["compress_freq"] = self._add_labeled_entry(frame, 4, "기본 주파수(Hz)", "compress_freq", default="60")
+        self.entries["compress_samples"] = self._add_labeled_entry(frame, 5, "주기당 샘플 수", "compress_samples", default="128")
+        self.entries["boundary_cycles"] = self._add_labeled_entry(frame, 6, "경계 주기", "boundary_cycles", default="3")
+
+        names_frame = ttk.Frame(frame)
+        names_frame.grid(row=7, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        ttk.Label(names_frame, text="채널 이름").grid(row=0, column=0, sticky="w", padx=4)
+        for idx, default in enumerate(["ch1", "ch2", "ch3"], start=1):
+            key = f"channel{idx}_name"
+            entry = ttk.Entry(names_frame, width=8)
+            entry.insert(0, default)
+            entry.grid(row=0, column=idx, padx=4)
+            self.entries[key] = entry
+            self.values[key] = default
+            entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
+
+        columns_frame = ttk.Frame(frame)
+        columns_frame.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        ttk.Label(columns_frame, text="값 컬럼").grid(row=0, column=0, sticky="w", padx=4)
+        for idx in range(1, 4):
+            key = f"channel{idx}_col"
+            entry = ttk.Entry(columns_frame, width=8)
+            entry.insert(0, "value")
+            entry.grid(row=0, column=idx, padx=4)
+            self.entries[key] = entry
+            self.values[key] = "value"
+            entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
+
+        thresholds_frame = ttk.Frame(frame)
+        thresholds_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        ttk.Label(thresholds_frame, text="정상 NRMSE").grid(row=0, column=0, padx=4)
+        self.entries["normal_thresh"] = ttk.Entry(thresholds_frame, width=8)
+        self.entries["normal_thresh"].insert(0, "0.05")
+        self.entries["normal_thresh"].grid(row=0, column=1, padx=4)
+        self.values["normal_thresh"] = "0.05"
+        self.entries["normal_thresh"].bind("<KeyRelease>", lambda _e, k="normal_thresh", widget=self.entries["normal_thresh"]: self._update_value(k, widget.get()))
+
+        ttk.Label(thresholds_frame, text="이상 NRMSE").grid(row=0, column=2, padx=4)
+        self.entries["event_thresh"] = ttk.Entry(thresholds_frame, width=8)
+        self.entries["event_thresh"].insert(0, "0.08")
+        self.entries["event_thresh"].grid(row=0, column=3, padx=4)
+        self.values["event_thresh"] = "0.08"
+        self.entries["event_thresh"].bind("<KeyRelease>", lambda _e, k="event_thresh", widget=self.entries["event_thresh"]: self._update_value(k, widget.get()))
+
+        ttk.Label(thresholds_frame, text="RAW 임계").grid(row=0, column=4, padx=4)
+        self.entries["raw_thresh"] = ttk.Entry(thresholds_frame, width=8)
+        self.entries["raw_thresh"].insert(0, "0.15")
+        self.entries["raw_thresh"].grid(row=0, column=5, padx=4)
+        self.values["raw_thresh"] = "0.15"
+        self.entries["raw_thresh"].bind("<KeyRelease>", lambda _e, k="raw_thresh", widget=self.entries["raw_thresh"]: self._update_value(k, widget.get()))
+
+        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        return frame
+
+    def _build_decompress_tab(self, notebook: ttk.Notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook)
+        frame.columnconfigure(1, weight=1)
+
+        self.entries["decompress_input"] = self._add_labeled_entry(frame, 0, "압축 JSON", "decompress_input", width=40)
+        ttk.Button(frame, text="찾기", command=lambda: self._browse_file("decompress_input", [("JSON", "*.json"), ("모든 파일", "*.*")])).grid(row=0, column=2, padx=4, pady=2)
+
+        self.entries["decompress_output"] = self._add_labeled_entry(frame, 1, "출력 CSV", "decompress_output", width=40)
+        ttk.Button(frame, text="저장 위치", command=lambda: self._save_file("decompress_output", ".csv", [("CSV", "*.csv"), ("모든 파일", "*.*")])).grid(row=1, column=2, padx=4, pady=2)
+
+        self.entries["time_column"] = self._add_labeled_entry(frame, 2, "시간 컬럼 이름", "time_column", default="time")
+
+        ttk.Button(frame, text="복원 및 미리보기", command=lambda: handle_decompress(self.values, self.template_canvas, self.abnormal_canvas, self.figures)).grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+
+        ttk.Label(frame, text="대표파형 미리보기").grid(row=4, column=0, columnspan=3, sticky="w", padx=4)
+        self.template_canvas = ttk.Frame(frame)
+        self.template_canvas.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
+
+        ttk.Label(frame, text="이상 구간 미리보기").grid(row=6, column=0, columnspan=3, sticky="w", padx=4)
+        self.abnormal_canvas = ttk.Frame(frame)
+        self.abnormal_canvas.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
+        frame.rowconfigure(5, weight=1)
+        frame.rowconfigure(7, weight=1)
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(2, weight=1)
+        return frame
 
 
 # ---------- Event loop ----------
 def main(args: Iterable[str] | None = None) -> None:  # noqa: ARG001
-    window = build_window()
-    figures: dict[str, FigureCanvasTkAgg] = {}
-
-    while True:
-        event, values = window.read()
-        if event in (sg.WINDOW_CLOSED, "Exit"):
-            break
-        if event == "run_resample":
-            handle_resample(values)
-        elif event == "run_compress":
-            handle_compress(values)
-        elif event == "run_decompress":
-            handle_decompress(values, window["template_canvas"], window["abnormal_canvas"], figures)
-
-    window.close()
+    root = tk.Tk()
+    app = WaveformApp(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
