@@ -45,7 +45,6 @@ EPS = 1e-12
 class CompressionConfig:
     input_paths: Sequence[Path]
     output_path: Path
-    nrmse_output: Path | None = None
     channels: Sequence[str]
     value_columns: Sequence[str]
     samples_per_cycle: int = 128
@@ -56,6 +55,7 @@ class CompressionConfig:
     event_channel: int | None = 1
     raw_threshold: float = 0.15
     boundary_cycles: int = 3
+    nrmse_output: Path | None = None
 
 
 def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
