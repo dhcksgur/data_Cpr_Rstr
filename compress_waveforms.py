@@ -50,12 +50,21 @@ class CompressionConfig:
     samples_per_cycle: int = 128
     sample_rate: float = 128.0
     time_column: str | None = "time"
-    normal_threshold: float = 0.05
-    event_threshold: float = 0.08
+    normal_thresholds: Sequence[float] = (0.05,)
+    event_thresholds: Sequence[float] = (0.08,)
     event_channel: int | None = 1
-    raw_threshold: float = 0.15
+    raw_thresholds: Sequence[float] = (0.15,)
     boundary_cycles: int = 3
     nrmse_output: Path | None = None
+
+
+def _normalize_thresholds(values: Sequence[float], name: str) -> tuple[float, float, float]:
+    arr = np.asarray(values, dtype=float).flatten()
+    if arr.size == 1:
+        arr = np.repeat(arr, 3)
+    if arr.size != 3:
+        raise ValueError(f"{name} must have 1 or 3 values")
+    return tuple(float(x) for x in arr)
 
 
 def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
@@ -108,14 +117,16 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
     parser.add_argument(
         "--normal-threshold",
         type=float,
-        default=0.05,
-        help="Max. NRMSE for a cycle to be considered normal",
+        nargs="+",
+        default=[0.05],
+        help="Max. NRMSE per channel for a cycle to be considered normal (1 or 3 values)",
     )
     parser.add_argument(
         "--event-threshold",
         type=float,
-        default=0.08,
-        help="NRMSE (channel 2) above which an abnormal segment starts",
+        nargs="+",
+        default=[0.08],
+        help="NRMSE per channel above which an abnormal segment starts (1 or 3 values)",
     )
     parser.add_argument(
         "--event-channel",
@@ -126,8 +137,9 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
     parser.add_argument(
         "--raw-threshold",
         type=float,
-        default=0.15,
-        help="NRMSE above which the full cycle is stored as raw samples",
+        nargs="+",
+        default=[0.15],
+        help="NRMSE per channel above which the full cycle is stored as raw samples (1 or 3 values)",
     )
     parser.add_argument(
         "--boundary-cycles",
@@ -146,10 +158,10 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         samples_per_cycle=ns.samples_per_cycle,
         sample_rate=ns.sample_rate,
         time_column=ns.time_column,
-        normal_threshold=ns.normal_threshold,
-        event_threshold=ns.event_threshold,
+        normal_thresholds=_normalize_thresholds(ns.normal_threshold, "normal-threshold"),
+        event_thresholds=_normalize_thresholds(ns.event_threshold, "event-threshold"),
         event_channel=(None if ns.event_channel == 0 else ns.event_channel - 1),
-        raw_threshold=ns.raw_threshold,
+        raw_thresholds=_normalize_thresholds(ns.raw_threshold, "raw-threshold"),
         boundary_cycles=ns.boundary_cycles,
     )
 
@@ -311,12 +323,16 @@ def compress_waveforms(config: CompressionConfig) -> dict:
     templates = _compute_templates(waveforms)
     gains, errors = _cycle_gains_and_errors(waveforms, templates)
 
+    normal_thresholds = np.asarray(config.normal_thresholds, dtype=float)
+    event_thresholds = np.asarray(config.event_thresholds, dtype=float)
+    raw_thresholds = np.asarray(config.raw_thresholds, dtype=float)
+
     if config.event_channel is None:
-        event_mask = (errors >= config.event_threshold).any(axis=1)
+        event_mask = (errors >= event_thresholds).any(axis=1)
     elif config.event_channel < 0 or config.event_channel >= errors.shape[1]:
         raise ValueError("event_channel index is out of range for the provided data")
     else:
-        event_mask = errors[:, config.event_channel] >= config.event_threshold
+        event_mask = errors[:, config.event_channel] >= event_thresholds[config.event_channel]
     segments = _find_segments(event_mask)
 
     cycles: list[dict] = []
@@ -325,7 +341,7 @@ def compress_waveforms(config: CompressionConfig) -> dict:
 
     for start, end in segments:
         while pointer < start:
-            if errors[pointer].max() <= config.normal_threshold:
+            if (errors[pointer] <= normal_thresholds).all():
                 cycles.append(
                     _scaled_entry("normal", pointer, config.channels, gains, errors)
                 )
@@ -338,7 +354,7 @@ def compress_waveforms(config: CompressionConfig) -> dict:
         for idx in range(start, end + 1):
             distance = min(idx - start, end - idx)
             force_raw = distance < config.boundary_cycles
-            store_raw = force_raw or errors[idx].max() >= config.raw_threshold
+            store_raw = force_raw or (errors[idx] >= raw_thresholds).any()
             if store_raw:
                 kind = "abnormal_raw"
                 cycles.append(
@@ -352,7 +368,7 @@ def compress_waveforms(config: CompressionConfig) -> dict:
         pointer = end + 1
 
     while pointer < num_cycles:
-        if errors[pointer].max() <= config.normal_threshold:
+        if (errors[pointer] <= normal_thresholds).all():
             cycles.append(
                 _scaled_entry("normal", pointer, config.channels, gains, errors)
             )
@@ -379,9 +395,9 @@ def compress_waveforms(config: CompressionConfig) -> dict:
             "original_samples": original_samples,
             "used_samples": int(waveforms.shape[0] * config.samples_per_cycle),
             "dropped_samples": dropped_samples,
-            "normal_threshold": config.normal_threshold,
-            "event_threshold": config.event_threshold,
-            "raw_threshold": config.raw_threshold,
+            "normal_thresholds": list(normal_thresholds),
+            "event_thresholds": list(event_thresholds),
+            "raw_thresholds": list(raw_thresholds),
             "boundary_cycles": config.boundary_cycles,
             "time_start": time_start,
             "dt": dt,

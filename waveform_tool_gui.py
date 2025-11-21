@@ -119,6 +119,13 @@ def handle_resample(values: dict) -> None:
 
 def handle_compress(values: dict) -> None:
     try:
+        def _collect_thresholds(prefix: str, default: float) -> list[float]:
+            collected: list[float] = []
+            for idx in range(1, 4):
+                raw = values.get(f"{prefix}{idx}", "").strip()
+                collected.append(float(raw) if raw else float(default))
+            return collected
+
         settings = SampleSettings(
             frequency_hz=float(values.get("compress_freq", 0)),
             samples_per_cycle=int(values.get("compress_samples", 0)),
@@ -132,6 +139,9 @@ def handle_compress(values: dict) -> None:
             if nrmse_path
             else output_json.with_name(f"{output_json.stem}_nrmse.csv")
         )
+        normal_thresholds = _collect_thresholds("normal_thresh", 0.05)
+        event_thresholds = _collect_thresholds("event_thresh", 0.08)
+        raw_thresholds = _collect_thresholds("raw_thresh", 0.15)
         config = CompressionConfig(
             input_paths=[
                 Path(values["compress_ch1"]),
@@ -153,10 +163,10 @@ def handle_compress(values: dict) -> None:
             samples_per_cycle=settings.samples_per_cycle,
             sample_rate=settings.sample_rate,
             time_column=time_col or None,
-            normal_threshold=float(values.get("normal_thresh", 0)),
-            event_threshold=float(values.get("event_thresh", 0)),
+            normal_thresholds=normal_thresholds,
+            event_thresholds=event_thresholds,
             event_channel=(None if event_channel == 0 else max(event_channel - 1, 0)),
-            raw_threshold=float(values.get("raw_thresh", 0)),
+            raw_thresholds=raw_thresholds,
             boundary_cycles=int(values.get("boundary_cycles", 0)),
         )
         payload = compress_waveforms(config)
@@ -413,26 +423,27 @@ class WaveformApp:
 
         thresholds_frame = ttk.Frame(frame)
         thresholds_frame.grid(row=12, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
-        ttk.Label(thresholds_frame, text="정상 NRMSE").grid(row=0, column=0, padx=4)
-        self.entries["normal_thresh"] = ttk.Entry(thresholds_frame, width=8)
-        self.entries["normal_thresh"].insert(0, "0.05")
-        self.entries["normal_thresh"].grid(row=0, column=1, padx=4)
-        self.values["normal_thresh"] = "0.05"
-        self.entries["normal_thresh"].bind("<KeyRelease>", lambda _e, k="normal_thresh", widget=self.entries["normal_thresh"]: self._update_value(k, widget.get()))
+        ttk.Label(thresholds_frame, text="채널별 NRMSE 임계값").grid(row=0, column=0, columnspan=4, sticky="w", padx=4)
 
-        ttk.Label(thresholds_frame, text="이상 NRMSE").grid(row=0, column=2, padx=4)
-        self.entries["event_thresh"] = ttk.Entry(thresholds_frame, width=8)
-        self.entries["event_thresh"].insert(0, "0.08")
-        self.entries["event_thresh"].grid(row=0, column=3, padx=4)
-        self.values["event_thresh"] = "0.08"
-        self.entries["event_thresh"].bind("<KeyRelease>", lambda _e, k="event_thresh", widget=self.entries["event_thresh"]: self._update_value(k, widget.get()))
+        ttk.Label(thresholds_frame, text="CH").grid(row=1, column=0, padx=4)
+        for idx in range(1, 4):
+            ttk.Label(thresholds_frame, text=str(idx)).grid(row=1, column=idx, padx=4)
 
-        ttk.Label(thresholds_frame, text="RAW 임계").grid(row=0, column=4, padx=4)
-        self.entries["raw_thresh"] = ttk.Entry(thresholds_frame, width=8)
-        self.entries["raw_thresh"].insert(0, "0.15")
-        self.entries["raw_thresh"].grid(row=0, column=5, padx=4)
-        self.values["raw_thresh"] = "0.15"
-        self.entries["raw_thresh"].bind("<KeyRelease>", lambda _e, k="raw_thresh", widget=self.entries["raw_thresh"]: self._update_value(k, widget.get()))
+        defaults = {"normal": "0.05", "event": "0.08", "raw": "0.15"}
+        labels = [("normal", "정상"), ("event", "이상"), ("raw", "RAW")]
+        for row_offset, (prefix, label) in enumerate(labels, start=2):
+            ttk.Label(thresholds_frame, text=f"{label} NRMSE").grid(row=row_offset, column=0, padx=4, sticky="e")
+            for ch in range(1, 4):
+                key = f"{prefix}_thresh{ch}"
+                entry = ttk.Entry(thresholds_frame, width=8)
+                entry.insert(0, defaults[prefix])
+                entry.grid(row=row_offset, column=ch, padx=4)
+                self.entries[key] = entry
+                self.values[key] = defaults[prefix]
+                entry.bind(
+                    "<KeyRelease>",
+                    lambda _e, k=key, widget=entry: self._update_value(k, widget.get()),
+                )
 
         ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=13, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
         return frame
