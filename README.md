@@ -47,3 +47,19 @@ python decompress_waveforms.py compressed.json restored.csv
 ```
 
 필요하다면 `--time-column` 옵션으로 시간 열 이름을 바꿀 수 있습니다.
+
+## GUI 실행 및 EXE 패키징
+
+`waveform_tool_gui.py`는 위의 세 스크립트를 하나의 그래픽 도구로 묶어 제공합니다.
+세 개의 탭이 있으며 원본 CSV 업로드 → 재샘플링 → 압축 → 복원이 모두 가능합니다.
+
+```bash
+python waveform_tool_gui.py
+```
+
+독립 실행형 EXE가 필요하다면 PyInstaller를 사용하세요.
+
+```bash
+pip install -r requirements.txt
+pyinstaller --onefile --windowed waveform_tool_gui.py
+```
