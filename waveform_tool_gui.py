@@ -189,17 +189,19 @@ def handle_compress(values: dict) -> None:
 
 
 def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
-    fig_height = 2.8 * len(channels) + 1.2
-    fig, axes = plt.subplots(len(channels), 1, figsize=(7, fig_height))
+    fig_height = 3.2 * len(channels) + 2.0
+    fig, axes = plt.subplots(
+        len(channels), 1, figsize=(8.5, fig_height), constrained_layout=True
+    )
     if len(channels) == 1:
         axes = [axes]
     for ax, name in zip(axes, channels):
         ax.plot(templates[name])
-        ax.set_title(f"대표파형: {name}")
-        ax.set_xlabel("샘플")
-        ax.set_ylabel("값")
+        ax.set_title(f"대표파형: {name}", pad=12)
+        ax.set_xlabel("샘플", labelpad=8)
+        ax.set_ylabel("값", labelpad=8)
         ax.grid(True, alpha=0.3)
-    fig.tight_layout(pad=1.2, h_pad=1.0)
+    fig.subplots_adjust(top=0.96, bottom=0.08, left=0.1, right=0.98, hspace=0.6)
     return fig
 
 
@@ -256,8 +258,10 @@ def _plot_abnormal_segments(
     segments: list[dict],
     selected_idx: int | None = None,
 ):
-    fig_height = 2.8 * len(channels) + 1.2
-    fig, axes = plt.subplots(len(channels), 1, figsize=(7, fig_height))
+    fig_height = 3.2 * len(channels) + 2.0
+    fig, axes = plt.subplots(
+        len(channels), 1, figsize=(8.5, fig_height), constrained_layout=True
+    )
     if len(channels) == 1:
         axes = [axes]
 
@@ -272,9 +276,9 @@ def _plot_abnormal_segments(
         for ax, name, row in zip(axes, channels, waveform_matrix):
             label = f"구간 {segments.index(segment) + 1}" if selected_idx is None else f"구간 {selected_idx + 1}"
             ax.plot(x, row, label=label)
-            ax.set_title(f"이상 구간 파형: {name}")
-            ax.set_xlabel("샘플")
-            ax.set_ylabel("값")
+            ax.set_title(f"이상 구간 파형: {name}", pad=12)
+            ax.set_xlabel("샘플", labelpad=8)
+            ax.set_ylabel("값", labelpad=8)
             ax.grid(True, alpha=0.3)
         plotted = True
 
@@ -286,7 +290,7 @@ def _plot_abnormal_segments(
             ax.set_title(f"이상 구간 없음: {name}")
             ax.axis("off")
 
-    fig.tight_layout(pad=1.2, h_pad=1.0)
+    fig.subplots_adjust(top=0.96, bottom=0.08, left=0.1, right=0.98, hspace=0.6)
     return fig
 
 
@@ -431,17 +435,21 @@ class WaveformApp:
         for idx in range(1, 4):
             ttk.Label(thresholds_frame, text=str(idx)).grid(row=1, column=idx, padx=4)
 
-        defaults = {"normal": "0.05", "event": "0.08", "raw": "0.15"}
+        defaults = {
+            "normal": ("0.09", "0.9", "0.09"),
+            "event": ("0.1", "1", "0.1"),
+            "raw": ("0.2", "2", "0.2"),
+        }
         labels = [("normal", "정상"), ("event", "이상"), ("raw", "RAW")]
         for row_offset, (prefix, label) in enumerate(labels, start=2):
             ttk.Label(thresholds_frame, text=f"{label} NRMSE").grid(row=row_offset, column=0, padx=4, sticky="e")
             for ch in range(1, 4):
                 key = f"{prefix}_thresh{ch}"
                 entry = ttk.Entry(thresholds_frame, width=8)
-                entry.insert(0, defaults[prefix])
+                entry.insert(0, defaults[prefix][ch - 1])
                 entry.grid(row=row_offset, column=ch, padx=4)
                 self.entries[key] = entry
-                self.values[key] = defaults[prefix]
+                self.values[key] = defaults[prefix][ch - 1]
                 entry.bind(
                     "<KeyRelease>",
                     lambda _e, k=key, widget=entry: self._update_value(k, widget.get()),

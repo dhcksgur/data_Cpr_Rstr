@@ -50,10 +50,10 @@ class CompressionConfig:
     samples_per_cycle: int = 128
     sample_rate: float = 128.0
     time_column: str | None = "time"
-    normal_thresholds: Sequence[float] = (0.05,)
-    event_thresholds: Sequence[float] = (0.08,)
+    normal_thresholds: Sequence[float] = (0.09, 0.9, 0.09)
+    event_thresholds: Sequence[float] = (0.1, 1.0, 0.1)
     event_channel: int | None = 1
-    raw_thresholds: Sequence[float] = (0.15,)
+    raw_thresholds: Sequence[float] = (0.2, 2.0, 0.2)
     boundary_cycles: int = 3
     nrmse_output: Path | None = None
 
@@ -118,14 +118,14 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         "--normal-threshold",
         type=float,
         nargs="+",
-        default=[0.05],
+        default=[0.09, 0.9, 0.09],
         help="Max. NRMSE per channel for a cycle to be considered normal (1 or 3 values)",
     )
     parser.add_argument(
         "--event-threshold",
         type=float,
         nargs="+",
-        default=[0.08],
+        default=[0.1, 1.0, 0.1],
         help="NRMSE per channel above which an abnormal segment starts (1 or 3 values)",
     )
     parser.add_argument(
@@ -138,7 +138,7 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         "--raw-threshold",
         type=float,
         nargs="+",
-        default=[0.15],
+        default=[0.2, 2.0, 0.2],
         help="NRMSE per channel above which the full cycle is stored as raw samples (1 or 3 values)",
     )
     parser.add_argument(
