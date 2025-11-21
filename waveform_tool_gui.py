@@ -10,8 +10,9 @@ single window with three tabs built on CustomTkinter:
 3. **압축 데이터 CSV 복원** — previews compressed data (templates and abnormal
    areas), then reconstructs a CSV file from the archive.
 
-Run with ``python waveform_tool_gui.py``. For distribution, ``pyinstaller
---onefile --windowed waveform_tool_gui.py`` produces a standalone executable.
+Run with ``python waveform_tool_gui.py``. For distribution, execute
+``python build_exe.py`` (or ``pyinstaller --onefile --windowed
+waveform_tool_gui.py``) to produce a standalone executable.
 """
 from __future__ import annotations
 
@@ -213,7 +214,7 @@ def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
     if len(channels) == 1:
         axes = [axes]
     for ax, name in zip(axes, channels):
-        ax.plot(templates[name], color=THEME_ACCENT, linewidth=2.0)
+        ax.plot(templates[name], color=THEME_ACCENT, linewidth=1.6)
         ax.set_title(f"대표파형: {name}", pad=12)
         ax.set_xlabel("샘플", labelpad=8)
         ax.set_ylabel("값", labelpad=8)
@@ -308,7 +309,7 @@ def _plot_abnormal_segments(
                 if selected_idx is None
                 else f"구간 {selected_idx + 1}"
             )
-            ax.plot(x, row, label=label, linewidth=1.6, color=color)
+            ax.plot(x, row, label=label, linewidth=1.3, color=color)
             ax.set_title(f"이상 구간 파형: {name}", pad=12)
             ax.set_xlabel("샘플", labelpad=8)
             ax.set_ylabel("값", labelpad=8)
