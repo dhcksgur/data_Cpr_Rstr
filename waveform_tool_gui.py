@@ -285,20 +285,30 @@ def _plot_abnormal_segments(
         axes = [axes]
 
     targets = segments if selected_idx is None else segments[selected_idx : selected_idx + 1]
+    palette = [
+        THEME_ACCENT,
+        "#22d3ee",  # cyan
+        "#a855f7",  # violet
+        "#f97316",  # orange
+        "#10b981",  # green
+        "#f43f5e",  # rose
+    ]
     plotted = False
 
-    for seg_no, segment in enumerate(targets, start=1):
+    for segment in targets:
         waveform_matrix = _segment_waveforms(segment, channels, templates)
         if waveform_matrix is None:
             continue
         x = np.arange(waveform_matrix.shape[1])
+        seg_index = segments.index(segment)
+        color = palette[seg_index % len(palette)]
         for ax, name, row in zip(axes, channels, waveform_matrix):
             label = (
                 f"구간 {segments.index(segment) + 1}"
                 if selected_idx is None
                 else f"구간 {selected_idx + 1}"
             )
-            ax.plot(x, row, label=label, linewidth=1.6, color=THEME_ACCENT)
+            ax.plot(x, row, label=label, linewidth=1.6, color=color)
             ax.set_title(f"이상 구간 파형: {name}", pad=12)
             ax.set_xlabel("샘플", labelpad=8)
             ax.set_ylabel("값", labelpad=8)
