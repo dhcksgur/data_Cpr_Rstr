@@ -40,6 +40,11 @@ from decompress_waveforms import (
 from resample_waveforms import ResampleConfig, resample_waveform
 
 matplotlib.use("TkAgg")
+plt.style.use("seaborn-v0_8-darkgrid")
+
+THEME_BG = "#0b132b"
+THEME_PANEL = "#1c2541"
+THEME_ACCENT = "#5bc0be"
 
 
 @dataclass
@@ -97,6 +102,16 @@ def _configure_korean_fonts() -> str:
         pass
 
     return chosen or "default"
+
+
+def _style_axes(ax) -> None:
+    ax.set_facecolor(THEME_PANEL)
+    for spine in ax.spines.values():
+        spine.set_color("#7d8597")
+    ax.tick_params(colors="#e0e6ed")
+    ax.title.set_color("#e0e6ed")
+    ax.xaxis.label.set_color("#e0e6ed")
+    ax.yaxis.label.set_color("#e0e6ed")
 
 
 # ---------- Core operations ----------
@@ -198,11 +213,13 @@ def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
     if len(channels) == 1:
         axes = [axes]
     for ax, name in zip(axes, channels):
-        ax.plot(templates[name])
+        ax.plot(templates[name], color=THEME_ACCENT, linewidth=2.0)
         ax.set_title(f"대표파형: {name}", pad=12)
         ax.set_xlabel("샘플", labelpad=8)
         ax.set_ylabel("값", labelpad=8)
-        ax.grid(True, alpha=0.3)
+        ax.grid(True, alpha=0.25)
+        _style_axes(ax)
+    fig.patch.set_facecolor(THEME_BG)
     fig.subplots_adjust(top=0.96, bottom=0.08, left=0.1, right=0.98, hspace=0.6)
     return fig
 
@@ -276,22 +293,28 @@ def _plot_abnormal_segments(
             continue
         x = np.arange(waveform_matrix.shape[1])
         for ax, name, row in zip(axes, channels, waveform_matrix):
-            label = f"구간 {segments.index(segment) + 1}" if selected_idx is None else f"구간 {selected_idx + 1}"
-            ax.plot(x, row, label=label)
+            label = (
+                f"구간 {segments.index(segment) + 1}"
+                if selected_idx is None
+                else f"구간 {selected_idx + 1}"
+            )
+            ax.plot(x, row, label=label, linewidth=1.6, color=THEME_ACCENT)
             ax.set_title(f"이상 구간 파형: {name}", pad=12)
             ax.set_xlabel("샘플", labelpad=8)
             ax.set_ylabel("값", labelpad=8)
-            ax.grid(True, alpha=0.3)
+            ax.grid(True, alpha=0.25)
+            _style_axes(ax)
         plotted = True
 
     if plotted:
         for ax in axes:
-            ax.legend()
+            ax.legend(facecolor=THEME_PANEL, framealpha=0.8, edgecolor="#7d8597", labelcolor="#e0e6ed")
     else:
         for ax, name in zip(axes, channels):
             ax.set_title(f"이상 구간 없음: {name}")
             ax.axis("off")
 
+    fig.patch.set_facecolor(THEME_BG)
     fig.subplots_adjust(top=0.96, bottom=0.08, left=0.1, right=0.98, hspace=0.6)
     return fig
 
@@ -312,14 +335,31 @@ class WaveformApp:
     def __init__(self, root: ctk.CTk):
         self.root = root
         self.root.title("Waveform Toolkit")
+        self.root.configure(fg_color=THEME_BG)
         self.values: dict[str, str] = {}
         self.figures: dict[str, FigureCanvasTkAgg] = {}
         self.entries: dict[str, ctk.CTkEntry] = {}
         self.preview: dict | None = None
         self.segment_var = ctk.StringVar(value="전체")
 
-        notebook = ctk.CTkTabview(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        header = ctk.CTkLabel(
+            self.root,
+            text="Waveform Toolkit",
+            font=("Segoe UI Semibold", 20),
+            text_color="#e0e6ed",
+        )
+        header.pack(anchor="w", padx=16, pady=(10, 0))
+
+        notebook = ctk.CTkTabview(
+            self.root,
+            fg_color=THEME_PANEL,
+            segmented_button_fg_color=THEME_BG,
+            segmented_button_selected_color=THEME_ACCENT,
+            segmented_button_unselected_color="#23395d",
+        )
+        notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
         resample_label = "오실로스코프 파형 샘플링 추출"
         compress_label = "CSV 데이터 압축"
@@ -370,6 +410,7 @@ class WaveformApp:
 
     # ---------- tab builders ----------
     def _build_resample_tab(self, frame: ctk.CTkFrame) -> None:
+        frame.configure(fg_color=THEME_PANEL)
         frame.grid_columnconfigure(1, weight=1)
 
         self.entries["resample_input"] = self._add_labeled_entry(frame, 0, "원본 CSV 파일", "resample_input", width=40)
@@ -396,6 +437,7 @@ class WaveformApp:
         )
 
     def _build_compress_tab(self, frame: ctk.CTkFrame) -> None:
+        frame.configure(fg_color=THEME_PANEL)
         frame.grid_columnconfigure(1, weight=1)
 
         for idx in range(1, 4):
@@ -496,6 +538,7 @@ class WaveformApp:
         )
 
     def _build_decompress_tab(self, frame: ctk.CTkFrame) -> None:
+        frame.configure(fg_color=THEME_PANEL)
         frame.grid_columnconfigure(1, weight=1)
 
         self.entries["decompress_input"] = self._add_labeled_entry(frame, 0, "압축 JSON", "decompress_input", width=40)
@@ -525,16 +568,16 @@ class WaveformApp:
             state="readonly",
             values=["전체"],
             width=160,
+            command=lambda _val=None: self._update_abnormal_plot(),
         )
         self.segment_combo.grid(row=4, column=1, sticky="w", padx=4)
-        self.segment_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_abnormal_plot())
 
         ctk.CTkLabel(frame, text="대표파형 미리보기").grid(row=5, column=0, columnspan=3, sticky="w", padx=4)
-        self.template_canvas = ctk.CTkFrame(frame)
+        self.template_canvas = ctk.CTkFrame(frame, fg_color=THEME_PANEL)
         self.template_canvas.grid(row=6, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
 
         ctk.CTkLabel(frame, text="이상 구간 미리보기").grid(row=7, column=0, columnspan=3, sticky="w", padx=4)
-        self.abnormal_canvas = ctk.CTkFrame(frame)
+        self.abnormal_canvas = ctk.CTkFrame(frame, fg_color=THEME_PANEL)
         self.abnormal_canvas.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
         frame.grid_rowconfigure(6, weight=1)
         frame.grid_rowconfigure(8, weight=1)
@@ -597,10 +640,16 @@ class WaveformApp:
             _plot_abnormal_segments(channels, templates, segments, selected_idx),
         )
 
+    def _on_close(self) -> None:
+        plt.close("all")
+        self.root.quit()
+        self.root.destroy()
+
 
 # ---------- Event loop ----------
 def main(args: Iterable[str] | None = None) -> None:  # noqa: ARG001
-    ctk.set_default_color_theme("blue")
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("dark-blue")
     root = ctk.CTk()
     chosen_font = _configure_korean_fonts()
     root.title(f"Waveform Toolkit ({chosen_font})")
