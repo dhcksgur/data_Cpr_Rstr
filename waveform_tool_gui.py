@@ -358,7 +358,8 @@ class WaveformApp:
             segmented_button_fg_color="#0b1220",
             segmented_button_selected_color=THEME_ACCENT,
             segmented_button_unselected_color="#1f2937",
-            segmented_button_border_color="#374151",
+            border_width=1,
+            border_color="#374151",
         )
         notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
@@ -572,7 +573,8 @@ class WaveformApp:
             segmented_button_fg_color="#0b1220",
             segmented_button_selected_color=THEME_ACCENT,
             segmented_button_unselected_color="#1f2937",
-            segmented_button_border_color="#374151",
+            border_width=1,
+            border_color="#374151",
         )
         tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
