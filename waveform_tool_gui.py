@@ -88,6 +88,7 @@ def handle_compress(values: dict) -> None:
             frequency_hz=float(values.get("compress_freq", 0)),
             samples_per_cycle=int(values.get("compress_samples", 0)),
         )
+        time_col = values.get("compress_time_col", "").strip()
         config = CompressionConfig(
             input_paths=[
                 Path(values["compress_ch1"]),
@@ -107,6 +108,7 @@ def handle_compress(values: dict) -> None:
             ],
             samples_per_cycle=settings.samples_per_cycle,
             sample_rate=settings.sample_rate,
+            time_column=time_col or None,
             normal_threshold=float(values.get("normal_thresh", 0)),
             event_threshold=float(values.get("event_thresh", 0)),
             raw_threshold=float(values.get("raw_thresh", 0)),
@@ -288,9 +290,16 @@ class WaveformApp:
         self.entries["compress_freq"] = self._add_labeled_entry(frame, 4, "기본 주파수(Hz)", "compress_freq", default="60")
         self.entries["compress_samples"] = self._add_labeled_entry(frame, 5, "주기당 샘플 수", "compress_samples", default="128")
         self.entries["boundary_cycles"] = self._add_labeled_entry(frame, 6, "경계 주기", "boundary_cycles", default="3")
+        self.entries["compress_time_col"] = self._add_labeled_entry(
+            frame,
+            7,
+            "시간 컬럼(비우면 무시)",
+            "compress_time_col",
+            default="",
+        )
 
         names_frame = ttk.Frame(frame)
-        names_frame.grid(row=7, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        names_frame.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(names_frame, text="채널 이름").grid(row=0, column=0, sticky="w", padx=4)
         for idx, default in enumerate(["ch1", "ch2", "ch3"], start=1):
             key = f"channel{idx}_name"
@@ -302,7 +311,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         columns_frame = ttk.Frame(frame)
-        columns_frame.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        columns_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(columns_frame, text="값 컬럼").grid(row=0, column=0, sticky="w", padx=4)
         for idx in range(1, 4):
             key = f"channel{idx}_col"
@@ -314,7 +323,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         thresholds_frame = ttk.Frame(frame)
-        thresholds_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        thresholds_frame.grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(thresholds_frame, text="정상 NRMSE").grid(row=0, column=0, padx=4)
         self.entries["normal_thresh"] = ttk.Entry(thresholds_frame, width=8)
         self.entries["normal_thresh"].insert(0, "0.05")
@@ -336,7 +345,7 @@ class WaveformApp:
         self.values["raw_thresh"] = "0.15"
         self.entries["raw_thresh"].bind("<KeyRelease>", lambda _e, k="raw_thresh", widget=self.entries["raw_thresh"]: self._update_value(k, widget.get()))
 
-        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=11, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
         return frame
 
     def _build_decompress_tab(self, notebook: ttk.Notebook) -> ttk.Frame:
