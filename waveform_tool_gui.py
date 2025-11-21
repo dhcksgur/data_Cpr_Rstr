@@ -125,13 +125,21 @@ def handle_compress(values: dict) -> None:
         )
         time_col = values.get("compress_time_col", "").strip()
         event_channel = int(values.get("event_channel", 0))
+        output_json = Path(values["compress_output"])
+        nrmse_path = values.get("nrmse_output", "").strip()
+        nrmse_output = (
+            Path(nrmse_path)
+            if nrmse_path
+            else output_json.with_name(f"{output_json.stem}_nrmse.csv")
+        )
         config = CompressionConfig(
             input_paths=[
                 Path(values["compress_ch1"]),
                 Path(values["compress_ch2"]),
                 Path(values["compress_ch3"]),
             ],
-            output_path=Path(values["compress_output"]),
+            output_path=output_json,
+            nrmse_output=nrmse_output,
             channels=[
                 values["channel1_name"],
                 values["channel2_name"],
@@ -160,7 +168,12 @@ def handle_compress(values: dict) -> None:
                 f"\n마지막 {dropped}개 샘플은 "
                 f"{settings.samples_per_cycle}배수에 맞춰 잘려 저장되었습니다."
             )
-        messagebox.showinfo("완료", f"압축이 완료되었습니다.{note}")
+        messagebox.showinfo(
+            "완료",
+            "압축이 완료되었습니다."
+            f"\nNRMSE CSV: {nrmse_output}"
+            f"{note}",
+        )
     except Exception as exc:  # noqa: BLE001
         messagebox.showerror("오류", f"압축 중 오류 발생: {exc}")
 
@@ -353,26 +366,29 @@ class WaveformApp:
         self.entries["compress_output"] = self._add_labeled_entry(frame, 3, "출력 JSON", "compress_output", width=40)
         ttk.Button(frame, text="저장 위치", command=lambda: self._save_file("compress_output", ".json", [("JSON", "*.json"), ("모든 파일", "*.*")])).grid(row=3, column=2, padx=4, pady=2)
 
-        self.entries["compress_freq"] = self._add_labeled_entry(frame, 4, "기본 주파수(Hz)", "compress_freq", default="60")
-        self.entries["compress_samples"] = self._add_labeled_entry(frame, 5, "주기당 샘플 수", "compress_samples", default="128")
-        self.entries["boundary_cycles"] = self._add_labeled_entry(frame, 6, "경계 주기", "boundary_cycles", default="3")
+        self.entries["nrmse_output"] = self._add_labeled_entry(frame, 4, "NRMSE CSV(비우면 자동)", "nrmse_output", width=40)
+        ttk.Button(frame, text="저장 위치", command=lambda: self._save_file("nrmse_output", ".csv", [("CSV", "*.csv"), ("모든 파일", "*.*")])).grid(row=4, column=2, padx=4, pady=2)
+
+        self.entries["compress_freq"] = self._add_labeled_entry(frame, 5, "기본 주파수(Hz)", "compress_freq", default="60")
+        self.entries["compress_samples"] = self._add_labeled_entry(frame, 6, "주기당 샘플 수", "compress_samples", default="128")
+        self.entries["boundary_cycles"] = self._add_labeled_entry(frame, 7, "경계 주기", "boundary_cycles", default="3")
         self.entries["event_channel"] = self._add_labeled_entry(
             frame,
-            7,
+            8,
             "이상 감지 채널(1~3, 0=전체)",
             "event_channel",
             default="2",
         )
         self.entries["compress_time_col"] = self._add_labeled_entry(
             frame,
-            8,
+            9,
             "시간 컬럼(비우면 무시)",
             "compress_time_col",
             default="",
         )
 
         names_frame = ttk.Frame(frame)
-        names_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        names_frame.grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(names_frame, text="채널 이름").grid(row=0, column=0, sticky="w", padx=4)
         for idx, default in enumerate(["ch1", "ch2", "ch3"], start=1):
             key = f"channel{idx}_name"
@@ -384,7 +400,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         columns_frame = ttk.Frame(frame)
-        columns_frame.grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        columns_frame.grid(row=11, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(columns_frame, text="값 컬럼").grid(row=0, column=0, sticky="w", padx=4)
         for idx in range(1, 4):
             key = f"channel{idx}_col"
@@ -396,7 +412,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         thresholds_frame = ttk.Frame(frame)
-        thresholds_frame.grid(row=11, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        thresholds_frame.grid(row=12, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(thresholds_frame, text="정상 NRMSE").grid(row=0, column=0, padx=4)
         self.entries["normal_thresh"] = ttk.Entry(thresholds_frame, width=8)
         self.entries["normal_thresh"].insert(0, "0.05")
@@ -418,7 +434,7 @@ class WaveformApp:
         self.values["raw_thresh"] = "0.15"
         self.entries["raw_thresh"].bind("<KeyRelease>", lambda _e, k="raw_thresh", widget=self.entries["raw_thresh"]: self._update_value(k, widget.get()))
 
-        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=12, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=13, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
         return frame
 
     def _build_decompress_tab(self, notebook: ttk.Notebook) -> ttk.Frame:

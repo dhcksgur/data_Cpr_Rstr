@@ -45,6 +45,7 @@ EPS = 1e-12
 class CompressionConfig:
     input_paths: Sequence[Path]
     output_path: Path
+    nrmse_output: Path | None = None
     channels: Sequence[str]
     value_columns: Sequence[str]
     samples_per_cycle: int = 128
@@ -67,6 +68,12 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         help="Resampled CSV files for each channel",
     )
     parser.add_argument("output", type=Path, help="Path to the JSON archive")
+    parser.add_argument(
+        "--nrmse-csv",
+        type=Path,
+        default=None,
+        help="Optional path for per-cycle NRMSE export (default: <output>_nrmse.csv)",
+    )
     parser.add_argument(
         "--channels",
         nargs=3,
@@ -133,6 +140,7 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
     return CompressionConfig(
         input_paths=ns.inputs,
         output_path=ns.output,
+        nrmse_output=ns.nrmse_csv,
         channels=ns.channels,
         value_columns=ns.value_columns,
         samples_per_cycle=ns.samples_per_cycle,
@@ -384,6 +392,13 @@ def compress_waveforms(config: CompressionConfig) -> dict:
         },
         "cycles": cycles,
     }
+
+    nrmse_path = config.nrmse_output or config.output_path.with_name(
+        f"{config.output_path.stem}_nrmse.csv"
+    )
+    nrmse_df = pd.DataFrame(errors, columns=config.channels)
+    nrmse_df.insert(0, "cycle", np.arange(len(errors)))
+    nrmse_df.to_csv(nrmse_path, index=False, encoding="utf-8")
 
     return payload
 
