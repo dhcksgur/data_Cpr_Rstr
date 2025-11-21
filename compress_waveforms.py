@@ -52,6 +52,7 @@ class CompressionConfig:
     time_column: str | None = "time"
     normal_threshold: float = 0.05
     event_threshold: float = 0.08
+    event_channel: int | None = 1
     raw_threshold: float = 0.15
     boundary_cycles: int = 3
 
@@ -110,6 +111,12 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         help="NRMSE (channel 2) above which an abnormal segment starts",
     )
     parser.add_argument(
+        "--event-channel",
+        type=int,
+        default=2,
+        help="1-based channel index used to detect abnormal events (0 to use any)",
+    )
+    parser.add_argument(
         "--raw-threshold",
         type=float,
         default=0.15,
@@ -133,6 +140,7 @@ def parse_args(args: Iterable[str] | None = None) -> CompressionConfig:
         time_column=ns.time_column,
         normal_threshold=ns.normal_threshold,
         event_threshold=ns.event_threshold,
+        event_channel=(None if ns.event_channel == 0 else ns.event_channel - 1),
         raw_threshold=ns.raw_threshold,
         boundary_cycles=ns.boundary_cycles,
     )
@@ -295,7 +303,12 @@ def compress_waveforms(config: CompressionConfig) -> dict:
     templates = _compute_templates(waveforms)
     gains, errors = _cycle_gains_and_errors(waveforms, templates)
 
-    event_mask = (errors >= config.event_threshold).any(axis=1)
+    if config.event_channel is None:
+        event_mask = (errors >= config.event_threshold).any(axis=1)
+    elif config.event_channel < 0 or config.event_channel >= errors.shape[1]:
+        raise ValueError("event_channel index is out of range for the provided data")
+    else:
+        event_mask = errors[:, config.event_channel] >= config.event_threshold
     segments = _find_segments(event_mask)
 
     cycles: list[dict] = []

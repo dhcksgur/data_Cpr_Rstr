@@ -34,7 +34,10 @@ python compress_waveforms.py ch1_128hz.csv ch2_128hz.csv ch3_128hz.csv \
 
 JSON 결과에는 메타데이터, 대표파형, 그리고 각 주기별로 어떤 방식으로 저장되었는지
 정보가 담깁니다. `--normal-threshold`, `--event-threshold`, `--raw-threshold` 값을
-조절하면 정상/이상 판단 기준을 쉽게 바꿀 수 있습니다.
+조절하면 정상/이상 판단 기준을 쉽게 바꿀 수 있습니다. 기본값으로는 2번 채널의
+오차(`--event-channel 2`)만 보고 이상 구간을 찾도록 설정했으므로, 다른 채널로
+이상을 판단하려면 숫자를 바꿔주세요. `0`을 넣으면 모든 채널 중 어느 하나라도
+임계치를 넘으면 이상 구간으로 간주합니다.
 
 입력 CSV마다 시간축이 미세하게 다를 경우 `--time-column ""`처럼 빈 문자열을 넘기면
 시간 열을 무시하고 샘플링 주기(기본 128 Hz)만 기반으로 압축합니다. GUI에서는
@@ -74,3 +77,5 @@ python waveform_tool_gui.py
 pip install -r requirements.txt
 pyinstaller --onefile --windowed waveform_tool_gui.py
 ```
+
+Windows에서 한글 글자가 네모로 보인다면 맑은 고딕(Malgun Gothic) 등 한글 폰트를 설치한 뒤 실행하세요. GUI는 이용 가능한 한글 폰트를 자동 선택해 Tkinter와 Matplotlib 모두에서 한글이 깨지지 않도록 설정합니다.

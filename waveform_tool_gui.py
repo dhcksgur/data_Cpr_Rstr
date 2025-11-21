@@ -24,7 +24,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
+from matplotlib import font_manager
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from compress_waveforms import CompressionConfig, compress_waveforms
@@ -62,6 +64,39 @@ def _draw_figure_on_canvas(canvas_frame: tk.Frame, figure):
     return fig_canvas
 
 
+def _configure_korean_fonts() -> str:
+    """Pick an available Korean-capable font for both Tk and Matplotlib."""
+
+    candidates = [
+        "Malgun Gothic",
+        "맑은 고딕",
+        "AppleGothic",
+        "NanumGothic",
+        "Noto Sans CJK KR",
+    ]
+    chosen = None
+    for name in candidates:
+        try:
+            font_manager.findfont(name, fallback_to_default=False)
+        except Exception:  # noqa: BLE001
+            continue
+        chosen = name
+        break
+
+    if chosen:
+        matplotlib.rcParams["font.family"] = chosen
+    matplotlib.rcParams["axes.unicode_minus"] = False
+
+    try:
+        default_font = tkfont.nametofont("TkDefaultFont")
+        if chosen:
+            default_font.configure(family=chosen)
+    except tk.TclError:
+        pass
+
+    return chosen or "default"
+
+
 # ---------- Core operations ----------
 def handle_resample(values: dict) -> None:
     try:
@@ -89,6 +124,7 @@ def handle_compress(values: dict) -> None:
             samples_per_cycle=int(values.get("compress_samples", 0)),
         )
         time_col = values.get("compress_time_col", "").strip()
+        event_channel = int(values.get("event_channel", 0))
         config = CompressionConfig(
             input_paths=[
                 Path(values["compress_ch1"]),
@@ -111,6 +147,7 @@ def handle_compress(values: dict) -> None:
             time_column=time_col or None,
             normal_threshold=float(values.get("normal_thresh", 0)),
             event_threshold=float(values.get("event_thresh", 0)),
+            event_channel=(None if event_channel == 0 else max(event_channel - 1, 0)),
             raw_threshold=float(values.get("raw_thresh", 0)),
             boundary_cycles=int(values.get("boundary_cycles", 0)),
         )
@@ -142,40 +179,88 @@ def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
     return fig
 
 
-def _plot_abnormal_segments(
-    channels: list[str],
-    templates: dict[str, list[float]],
-    cycles: list[dict],
-):
-    template_matrix = np.stack([templates[name] for name in channels], axis=0)
-    abnormal = []
+def _extract_abnormal_segments(cycles: list[dict]):
+    segments: list[dict] = []
+    current: list[dict] = []
+    start_idx: int | None = None
+
     for entry in cycles:
-        kind = entry.get("kind", "")
-        if not str(kind).startswith("abnormal"):
-            continue
+        kind = str(entry.get("kind", ""))
+        idx = int(entry.get("index", -1))
+        is_abn = kind.startswith("abnormal")
+        if is_abn:
+            if start_idx is None:
+                start_idx = idx
+            current.append(entry)
+        elif start_idx is not None:
+            segments.append({
+                "start": start_idx,
+                "end": idx - 1,
+                "entries": current,
+            })
+            current = []
+            start_idx = None
+
+    if start_idx is not None:
+        segments.append({
+            "start": start_idx,
+            "end": current[-1].get("index", start_idx),
+            "entries": current,
+        })
+    return segments
+
+
+def _segment_waveforms(segment: dict, channels: list[str], templates: dict[str, list[float]]):
+    template_matrix = np.stack([templates[name] for name in channels], axis=0)
+    cycles: list[np.ndarray] = []
+    for entry in segment.get("entries", []):
         if "waveforms" in entry:
-            abnormal.append(
+            cycles.append(
                 np.array([entry["waveforms"][name] for name in channels], dtype=float)
             )
         elif "gains" in entry:
             gains = np.array([entry["gains"][name] for name in channels], dtype=float)
-            abnormal.append(gains[:, None] * template_matrix)
+            cycles.append(gains[:, None] * template_matrix)
+    if not cycles:
+        return None
+    return np.concatenate(cycles, axis=1)
+
+
+def _plot_abnormal_segments(
+    channels: list[str],
+    templates: dict[str, list[float]],
+    segments: list[dict],
+    selected_idx: int | None = None,
+):
     fig, axes = plt.subplots(len(channels), 1, figsize=(6, 3 + len(channels)))
     if len(channels) == 1:
         axes = [axes]
-    if abnormal:
-        stacked = np.concatenate(abnormal, axis=1)
-        x = np.arange(stacked.shape[1])
-        for ax, name, row in zip(axes, channels, stacked):
-            ax.plot(x, row)
+
+    targets = segments if selected_idx is None else segments[selected_idx : selected_idx + 1]
+    plotted = False
+
+    for seg_no, segment in enumerate(targets, start=1):
+        waveform_matrix = _segment_waveforms(segment, channels, templates)
+        if waveform_matrix is None:
+            continue
+        x = np.arange(waveform_matrix.shape[1])
+        for ax, name, row in zip(axes, channels, waveform_matrix):
+            label = f"구간 {segments.index(segment) + 1}" if selected_idx is None else f"구간 {selected_idx + 1}"
+            ax.plot(x, row, label=label)
             ax.set_title(f"이상 구간 파형: {name}")
             ax.set_xlabel("샘플")
             ax.set_ylabel("값")
             ax.grid(True, alpha=0.3)
+        plotted = True
+
+    if plotted:
+        for ax in axes:
+            ax.legend()
     else:
         for ax, name in zip(axes, channels):
             ax.set_title(f"이상 구간 없음: {name}")
             ax.axis("off")
+
     fig.tight_layout()
     return fig
 
@@ -190,34 +275,6 @@ def load_archive_for_preview(path: Path):
         return None
 
 
-def handle_decompress(values: dict, template_canvas: tk.Frame, abnormal_canvas: tk.Frame, figures: dict) -> None:
-    archive_path = Path(values["decompress_input"])
-    preview = load_archive_for_preview(archive_path)
-    if preview is None:
-        return
-    channels, templates, cycles = preview
-
-    try:
-        config = DecompressionConfig(
-            input_path=archive_path,
-            output_path=Path(values["decompress_output"]),
-            time_column=values["time_column"],
-        )
-        df = decompress_waveforms(config)
-        df.to_csv(config.output_path, index=False)
-    except Exception as exc:  # noqa: BLE001
-        messagebox.showerror("오류", f"복원 중 오류 발생: {exc}")
-        return
-
-    figures["templates"] = _draw_figure_on_canvas(
-        template_canvas, _plot_templates(channels, templates)
-    )
-    figures["abnormal"] = _draw_figure_on_canvas(
-        abnormal_canvas, _plot_abnormal_segments(channels, templates, cycles)
-    )
-    messagebox.showinfo("완료", "복원이 완료되었습니다.")
-
-
 class WaveformApp:
     """Tkinter GUI wrapper for waveform utilities."""
 
@@ -227,6 +284,8 @@ class WaveformApp:
         self.values: dict[str, str] = {}
         self.figures: dict[str, FigureCanvasTkAgg] = {}
         self.entries: dict[str, ttk.Entry] = {}
+        self.preview: dict | None = None
+        self.segment_var = tk.StringVar(value="전체")
 
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill=tk.BOTH, expand=True)
@@ -297,16 +356,23 @@ class WaveformApp:
         self.entries["compress_freq"] = self._add_labeled_entry(frame, 4, "기본 주파수(Hz)", "compress_freq", default="60")
         self.entries["compress_samples"] = self._add_labeled_entry(frame, 5, "주기당 샘플 수", "compress_samples", default="128")
         self.entries["boundary_cycles"] = self._add_labeled_entry(frame, 6, "경계 주기", "boundary_cycles", default="3")
-        self.entries["compress_time_col"] = self._add_labeled_entry(
+        self.entries["event_channel"] = self._add_labeled_entry(
             frame,
             7,
+            "이상 감지 채널(1~3, 0=전체)",
+            "event_channel",
+            default="2",
+        )
+        self.entries["compress_time_col"] = self._add_labeled_entry(
+            frame,
+            8,
             "시간 컬럼(비우면 무시)",
             "compress_time_col",
             default="",
         )
 
         names_frame = ttk.Frame(frame)
-        names_frame.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        names_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(names_frame, text="채널 이름").grid(row=0, column=0, sticky="w", padx=4)
         for idx, default in enumerate(["ch1", "ch2", "ch3"], start=1):
             key = f"channel{idx}_name"
@@ -318,7 +384,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         columns_frame = ttk.Frame(frame)
-        columns_frame.grid(row=9, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        columns_frame.grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(columns_frame, text="값 컬럼").grid(row=0, column=0, sticky="w", padx=4)
         for idx in range(1, 4):
             key = f"channel{idx}_col"
@@ -330,7 +396,7 @@ class WaveformApp:
             entry.bind("<KeyRelease>", lambda _e, k=key, widget=entry: self._update_value(k, widget.get()))
 
         thresholds_frame = ttk.Frame(frame)
-        thresholds_frame.grid(row=10, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
+        thresholds_frame.grid(row=11, column=0, columnspan=3, sticky="ew", padx=4, pady=2)
         ttk.Label(thresholds_frame, text="정상 NRMSE").grid(row=0, column=0, padx=4)
         self.entries["normal_thresh"] = ttk.Entry(thresholds_frame, width=8)
         self.entries["normal_thresh"].insert(0, "0.05")
@@ -352,7 +418,7 @@ class WaveformApp:
         self.values["raw_thresh"] = "0.15"
         self.entries["raw_thresh"].bind("<KeyRelease>", lambda _e, k="raw_thresh", widget=self.entries["raw_thresh"]: self._update_value(k, widget.get()))
 
-        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=11, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        ttk.Button(frame, text="압축 실행", command=lambda: handle_compress(self.values)).grid(row=12, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
         return frame
 
     def _build_decompress_tab(self, notebook: ttk.Notebook) -> ttk.Frame:
@@ -367,26 +433,94 @@ class WaveformApp:
 
         self.entries["time_column"] = self._add_labeled_entry(frame, 2, "시간 컬럼 이름", "time_column", default="time")
 
-        ttk.Button(frame, text="복원 및 미리보기", command=lambda: handle_decompress(self.values, self.template_canvas, self.abnormal_canvas, self.figures)).grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
+        ttk.Button(frame, text="복원 및 미리보기", command=self._handle_decompress).grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=6)
 
-        ttk.Label(frame, text="대표파형 미리보기").grid(row=4, column=0, columnspan=3, sticky="w", padx=4)
+        ttk.Label(frame, text="이상 구간 선택").grid(row=4, column=0, sticky="w", padx=4)
+        self.segment_combo = ttk.Combobox(
+            frame,
+            textvariable=self.segment_var,
+            state="readonly",
+            values=["전체"],
+            width=20,
+        )
+        self.segment_combo.grid(row=4, column=1, sticky="w", padx=4)
+        self.segment_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_abnormal_plot())
+
+        ttk.Label(frame, text="대표파형 미리보기").grid(row=5, column=0, columnspan=3, sticky="w", padx=4)
         self.template_canvas = ttk.Frame(frame)
-        self.template_canvas.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
+        self.template_canvas.grid(row=6, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
 
-        ttk.Label(frame, text="이상 구간 미리보기").grid(row=6, column=0, columnspan=3, sticky="w", padx=4)
+        ttk.Label(frame, text="이상 구간 미리보기").grid(row=7, column=0, columnspan=3, sticky="w", padx=4)
         self.abnormal_canvas = ttk.Frame(frame)
-        self.abnormal_canvas.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
-        frame.rowconfigure(5, weight=1)
-        frame.rowconfigure(7, weight=1)
+        self.abnormal_canvas.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
+        frame.rowconfigure(6, weight=1)
+        frame.rowconfigure(8, weight=1)
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(2, weight=1)
         return frame
 
+    # ---------- decompress helpers ----------
+    def _handle_decompress(self) -> None:
+        archive_path = Path(self.values.get("decompress_input", ""))
+        preview = load_archive_for_preview(archive_path)
+        if preview is None:
+            return
+        channels, templates, cycles = preview
+
+        try:
+            config = DecompressionConfig(
+                input_path=archive_path,
+                output_path=Path(self.values.get("decompress_output", "")),
+                time_column=self.values.get("time_column", "time"),
+            )
+            df = decompress_waveforms(config)
+            df.to_csv(config.output_path, index=False)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("오류", f"복원 중 오류 발생: {exc}")
+            return
+
+        segments = _extract_abnormal_segments(cycles)
+        labels = ["전체"] + [f"구간 {idx + 1} ({seg['start']}~{seg['end']})" for idx, seg in enumerate(segments)]
+        self.preview = {
+            "channels": channels,
+            "templates": templates,
+            "segments": segments,
+        }
+        self.segment_combo.configure(values=labels)
+        self.segment_var.set(labels[0])
+
+        self.figures["templates"] = _draw_figure_on_canvas(
+            self.template_canvas, _plot_templates(channels, templates)
+        )
+        self._update_abnormal_plot()
+        messagebox.showinfo("완료", "복원이 완료되었습니다.")
+
+    def _update_abnormal_plot(self) -> None:
+        if not self.preview:
+            return
+        channels = self.preview["channels"]
+        templates = self.preview["templates"]
+        segments = self.preview["segments"]
+        selection = self.segment_var.get()
+        selected_idx: int | None = None
+        if selection.startswith("구간"):
+            try:
+                selected_idx = int(selection.split()[1]) - 1
+            except Exception:  # noqa: BLE001
+                selected_idx = None
+
+        self.figures["abnormal"] = _draw_figure_on_canvas(
+            self.abnormal_canvas,
+            _plot_abnormal_segments(channels, templates, segments, selected_idx),
+        )
+
 
 # ---------- Event loop ----------
 def main(args: Iterable[str] | None = None) -> None:  # noqa: ARG001
     root = tk.Tk()
+    chosen_font = _configure_korean_fonts()
+    root.title(f"Waveform Toolkit ({chosen_font})")
     app = WaveformApp(root)
     root.mainloop()
 
