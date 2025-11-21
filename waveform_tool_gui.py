@@ -116,7 +116,14 @@ def handle_compress(values: dict) -> None:
         )
         payload = compress_waveforms(config)
         config.output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        messagebox.showinfo("완료", "압축이 완료되었습니다.")
+        dropped = payload.get("metadata", {}).get("dropped_samples", 0)
+        note = ""
+        if dropped:
+            note = (
+                f"\n마지막 {dropped}개 샘플은 "
+                f"{settings.samples_per_cycle}배수에 맞춰 잘려 저장되었습니다."
+            )
+        messagebox.showinfo("완료", f"압축이 완료되었습니다.{note}")
     except Exception as exc:  # noqa: BLE001
         messagebox.showerror("오류", f"압축 중 오류 발생: {exc}")
 

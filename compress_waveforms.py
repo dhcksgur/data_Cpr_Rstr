@@ -183,16 +183,30 @@ def _load_channels(
     return stacked, times
 
 
-def _reshape_cycles(values: np.ndarray, samples_per_cycle: int) -> np.ndarray:
-    total_samples, num_channels = values.shape
-    if total_samples % samples_per_cycle:
+def _reshape_cycles(
+    values: np.ndarray, samples_per_cycle: int
+) -> tuple[np.ndarray, int, int]:
+    """Reshape into cycles, trimming any trailing partial cycle."""
+
+    original_samples, num_channels = values.shape
+    remainder = original_samples % samples_per_cycle
+
+    if original_samples < samples_per_cycle:
         raise ValueError(
-            "Number of samples is not divisible by samples_per_cycle. "
-            f"Got {total_samples} samples for {samples_per_cycle}-sample cycles."
+            "Not enough samples to form a single cycle. "
+            f"Got {original_samples} samples, need at least {samples_per_cycle}."
         )
+
+    if remainder:
+        values = values[: original_samples - remainder]
+
+    total_samples = values.shape[0]
     num_cycles = total_samples // samples_per_cycle
+    if num_cycles == 0:
+        raise ValueError("No complete cycles after trimming partial samples.")
+
     reshaped = values.reshape(num_cycles, samples_per_cycle, num_channels)
-    return np.transpose(reshaped, (0, 2, 1))  # (cycles, channels, samples)
+    return np.transpose(reshaped, (0, 2, 1)), remainder, original_samples
 
 
 def _compute_templates(waveforms: np.ndarray) -> np.ndarray:
@@ -275,7 +289,9 @@ def compress_waveforms(config: CompressionConfig) -> dict:
     values, times = _load_channels(
         config.input_paths, config.value_columns, config.time_column
     )
-    waveforms = _reshape_cycles(values, config.samples_per_cycle)
+    waveforms, dropped_samples, original_samples = _reshape_cycles(
+        values, config.samples_per_cycle
+    )
     templates = _compute_templates(waveforms)
     gains, errors = _cycle_gains_and_errors(waveforms, templates)
 
@@ -339,6 +355,9 @@ def compress_waveforms(config: CompressionConfig) -> dict:
             "value_columns": list(config.value_columns),
             "samples_per_cycle": config.samples_per_cycle,
             "sample_rate": config.sample_rate,
+            "original_samples": original_samples,
+            "used_samples": int(waveforms.shape[0] * config.samples_per_cycle),
+            "dropped_samples": dropped_samples,
             "normal_threshold": config.normal_threshold,
             "event_threshold": config.event_threshold,
             "raw_threshold": config.raw_threshold,
