@@ -189,7 +189,8 @@ def handle_compress(values: dict) -> None:
 
 
 def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
-    fig, axes = plt.subplots(len(channels), 1, figsize=(6, 3 + len(channels)))
+    fig_height = 2.8 * len(channels) + 1.2
+    fig, axes = plt.subplots(len(channels), 1, figsize=(7, fig_height))
     if len(channels) == 1:
         axes = [axes]
     for ax, name in zip(axes, channels):
@@ -198,7 +199,7 @@ def _plot_templates(channels: list[str], templates: dict[str, list[float]]):
         ax.set_xlabel("샘플")
         ax.set_ylabel("값")
         ax.grid(True, alpha=0.3)
-    fig.tight_layout()
+    fig.tight_layout(pad=1.2, h_pad=1.0)
     return fig
 
 
@@ -255,7 +256,8 @@ def _plot_abnormal_segments(
     segments: list[dict],
     selected_idx: int | None = None,
 ):
-    fig, axes = plt.subplots(len(channels), 1, figsize=(6, 3 + len(channels)))
+    fig_height = 2.8 * len(channels) + 1.2
+    fig, axes = plt.subplots(len(channels), 1, figsize=(7, fig_height))
     if len(channels) == 1:
         axes = [axes]
 
@@ -284,7 +286,7 @@ def _plot_abnormal_segments(
             ax.set_title(f"이상 구간 없음: {name}")
             ax.axis("off")
 
-    fig.tight_layout()
+    fig.tight_layout(pad=1.2, h_pad=1.0)
     return fig
 
 
