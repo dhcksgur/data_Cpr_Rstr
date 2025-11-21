@@ -42,9 +42,9 @@ from resample_waveforms import ResampleConfig, resample_waveform
 matplotlib.use("TkAgg")
 plt.style.use("seaborn-v0_8-darkgrid")
 
-THEME_BG = "#0b132b"
-THEME_PANEL = "#1c2541"
-THEME_ACCENT = "#5bc0be"
+THEME_BG = "#0f172a"
+THEME_PANEL = "#111827"
+THEME_ACCENT = "#3b82f6"
 
 
 @dataclass
@@ -355,9 +355,10 @@ class WaveformApp:
         notebook = ctk.CTkTabview(
             self.root,
             fg_color=THEME_PANEL,
-            segmented_button_fg_color=THEME_BG,
+            segmented_button_fg_color="#0b1220",
             segmented_button_selected_color=THEME_ACCENT,
-            segmented_button_unselected_color="#23395d",
+            segmented_button_unselected_color="#1f2937",
+            segmented_button_border_color="#374151",
         )
         notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
@@ -560,27 +561,48 @@ class WaveformApp:
         ctk.CTkButton(frame, text="복원 및 미리보기", command=self._handle_decompress).grid(
             row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=6
         )
+        preview_frame = ctk.CTkFrame(frame, fg_color="#0b1220", corner_radius=12)
+        preview_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", padx=4, pady=(10, 6))
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_frame.grid_rowconfigure(0, weight=1)
 
-        ctk.CTkLabel(frame, text="이상 구간 선택").grid(row=4, column=0, sticky="w", padx=4)
+        tabs = ctk.CTkTabview(
+            preview_frame,
+            fg_color=THEME_PANEL,
+            segmented_button_fg_color="#0b1220",
+            segmented_button_selected_color=THEME_ACCENT,
+            segmented_button_unselected_color="#1f2937",
+            segmented_button_border_color="#374151",
+        )
+        tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+
+        template_tab = tabs.add("대표 파형")
+        template_tab.grid_columnconfigure(0, weight=1)
+        template_tab.grid_rowconfigure(0, weight=1)
+        self.template_canvas = ctk.CTkFrame(template_tab, fg_color=THEME_PANEL)
+        self.template_canvas.grid(row=0, column=0, sticky="nsew")
+
+        abnormal_tab = tabs.add("이상 구간")
+        abnormal_tab.grid_columnconfigure(0, weight=1)
+        abnormal_tab.grid_rowconfigure(2, weight=1)
+        selector = ctk.CTkFrame(abnormal_tab, fg_color="#0b1220")
+        selector.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 0))
+        selector.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(selector, text="이상 구간 선택").grid(row=0, column=0, sticky="w", padx=4)
         self.segment_combo = ctk.CTkComboBox(
-            frame,
+            selector,
             variable=self.segment_var,
             state="readonly",
             values=["전체"],
             width=160,
             command=lambda _val=None: self._update_abnormal_plot(),
         )
-        self.segment_combo.grid(row=4, column=1, sticky="w", padx=4)
+        self.segment_combo.grid(row=0, column=1, sticky="w", padx=4)
 
-        ctk.CTkLabel(frame, text="대표파형 미리보기").grid(row=5, column=0, columnspan=3, sticky="w", padx=4)
-        self.template_canvas = ctk.CTkFrame(frame, fg_color=THEME_PANEL)
-        self.template_canvas.grid(row=6, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
+        self.abnormal_canvas = ctk.CTkFrame(abnormal_tab, fg_color=THEME_PANEL)
+        self.abnormal_canvas.grid(row=2, column=0, sticky="nsew", padx=0, pady=(6, 0))
 
-        ctk.CTkLabel(frame, text="이상 구간 미리보기").grid(row=7, column=0, columnspan=3, sticky="w", padx=4)
-        self.abnormal_canvas = ctk.CTkFrame(frame, fg_color=THEME_PANEL)
-        self.abnormal_canvas.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=2)
-        frame.grid_rowconfigure(6, weight=1)
-        frame.grid_rowconfigure(8, weight=1)
+        frame.grid_rowconfigure(4, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_columnconfigure(2, weight=1)
@@ -648,7 +670,7 @@ class WaveformApp:
 
 # ---------- Event loop ----------
 def main(args: Iterable[str] | None = None) -> None:  # noqa: ARG001
-    ctk.set_appearance_mode("System")
+    ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     root = ctk.CTk()
     chosen_font = _configure_korean_fonts()
